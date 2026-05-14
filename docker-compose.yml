@@ -1,0 +1,113 @@
+version: "3.9"
+
+# All ports and settings are driven by the root .env file.
+# To change any port, edit .env and run: docker compose up --build
+
+services:
+  # ─────────────────────────────────────────
+  # PostgreSQL – single server, two databases
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: medusa_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB_MEDUSA}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Creates the payload database on first start
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB_MEDUSA}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Redis – used by Medusa for events/jobs
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: medusa_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Medusa Backend
+  # ─────────────────────────────────────────
+  medusa:
+    build:
+      context: ./medusa
+      dockerfile: Dockerfile
+    container_name: medusa_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB_MEDUSA}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      COOKIE_SECRET: ${COOKIE_SECRET}
+      MEDUSA_ADMIN_CORS: ${MEDUSA_ADMIN_CORS}
+      MEDUSA_STORE_CORS: ${MEDUSA_STORE_CORS}
+      MEDUSA_AUTH_CORS: ${MEDUSA_AUTH_CORS}
+      PORT: 9000
+      # Payload integration
+      PAYLOAD_SERVER_URL: http://storefront:3000
+      PAYLOAD_API_KEY: ${PAYLOAD_API_KEY}
+      PAYLOAD_USER_COLLECTION: ${PAYLOAD_USER_COLLECTION}
+    ports:
+      - "${MEDUSA_PORT}:9000"
+    volumes:
+      - ./medusa/src:/app/src
+      - ./medusa/medusa-config.ts:/app/medusa-config.ts
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ─────────────────────────────────────────
+  # Next.js Storefront (with Payload CMS embedded)
+  # ─────────────────────────────────────────
+  storefront:
+    build:
+      context: ./storefront
+      dockerfile: Dockerfile
+    container_name: medusa_storefront
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      medusa:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://medusa:9000
+      NEXT_PUBLIC_BASE_URL: http://localhost:${STOREFRONT_PORT}
+      NEXT_PUBLIC_DEFAULT_REGION: ${NEXT_PUBLIC_DEFAULT_REGION}
+      # Payload inside storefront
+      PAYLOAD_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB_PAYLOAD}
+      PAYLOAD_SECRET: ${PAYLOAD_SECRET}
+      PORT: 3000
+    ports:
+      - "${STOREFRONT_PORT}:3000"
+    volumes:
+      - ./storefront/src:/app/src
+      - ./storefront/public:/app/public
+
+volumes:
+  postgres_data:
