@@ -1,12 +1,6 @@
 version: "3.9"
 
-# All ports and settings are driven by the root .env file.
-# To change any port, edit .env and run: docker compose up --build
-
 services:
-  # ─────────────────────────────────────────
-  # PostgreSQL – single server, two databases
-  # ─────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: medusa_postgres
@@ -26,10 +20,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  # ─────────────────────────────────────────
-  # Redis – used by Medusa for events/jobs
-  # ─────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: medusa_redis
@@ -42,9 +32,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─────────────────────────────────────────
-  # Medusa Backend
-  # ─────────────────────────────────────────
   medusa:
     build:
       context: ./medusa
@@ -65,7 +52,7 @@ services:
       MEDUSA_STORE_CORS: ${MEDUSA_STORE_CORS}
       MEDUSA_AUTH_CORS: ${MEDUSA_AUTH_CORS}
       PORT: 9000
-      # Payload integration
+
       PAYLOAD_SERVER_URL: http://storefront:3000
       PAYLOAD_API_KEY: ${PAYLOAD_API_KEY}
       PAYLOAD_USER_COLLECTION: ${PAYLOAD_USER_COLLECTION}
@@ -81,9 +68,6 @@ services:
       retries: 5
       start_period: 60s
 
-  # ─────────────────────────────────────────
-  # Next.js Storefront (with Payload CMS embedded)
-  # ─────────────────────────────────────────
   storefront:
     build:
       context: ./storefront
@@ -99,7 +83,7 @@ services:
       NEXT_PUBLIC_MEDUSA_BACKEND_URL: http://medusa:9000
       NEXT_PUBLIC_BASE_URL: http://localhost:${STOREFRONT_PORT}
       NEXT_PUBLIC_DEFAULT_REGION: ${NEXT_PUBLIC_DEFAULT_REGION}
-      # Payload inside storefront
+
       PAYLOAD_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB_PAYLOAD}
       PAYLOAD_SECRET: ${PAYLOAD_SECRET}
       PORT: 3000
